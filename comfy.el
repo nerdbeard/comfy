@@ -435,3 +435,5 @@
             (seq (, (append '(seq) body))
                  (, (append '(1+) v))
                  (, (append '(l) v)))))))
+
+(provide 'comfy)

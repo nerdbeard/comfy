@@ -1,89 +1,104 @@
-* Intro
-I want to put together a complete 6502 environment in elisp.
-
-Features:
-- simulate multiple systems concurrently
-- simulate common 65-series hardware environments and chips
-- assemble source code into ROMs and other images
-- emulate 6502, 6522, etc to run and debug code
-
-Simulation goals:
-- Two 6502s communicating via a serial interface (6522?)
-- A group of 6502s communicating via packet radio
-
-Interesting chips:
-- 6522 VIA 2 port parellel and 2-timer
-- 6552 RIOT (RAM I/O Timer) w/128 bytes RAM as found on 2600
-- 6264 SRAM http://www.cs.uml.edu/~fredm/courses/91.305/files/cy6264.pdf
-* Components
-** Bus
-The bus hosts a set of devices mediated by device managers that take
-the place of address decoders, CS logic, etc.
-
-Devices can emit and receive read requests, write requests and signals via the bus.  Reads and writes have a 16-bit address, signals have only a truth value in the form of their presence or absence.
-
-There is no use case for clock cycle emulation yet but I believe it might become relevant as more emulated hardware is written.
-** Devices
-*** 6264 SRAM
-*** file-backed ROM
-** Emulator
-6502 to be provided by emacs-nes
-Bus emulation and 65xx series chip emulators to be written
-** Assembler
-To be provided by or modelled after COMFY-65 or cl-comfy-6502
-** Disassembler
-To be written
-
-Decompile to COMFY-65?  maybe not possible.  In that case, the assembler can't really be COMFY-65 either, we need another one to do round trip from the disassembler to editor to assembler to code back to disassembler.
-
-cl-comfy-6502 compiles to a parsed assembly format, for example:
+* LICENSE
 #+BEGIN_EXAMPLE
-  (compile-code (3 (1+ 100)))
-    -->
-  ((INC :ZERO-PAGE) (:ZERO-PAGE 100) 
-   (INC :ZERO-PAGE) (:ZERO-PAGE 100) 
-   (INC :ZERO-PAGE) (:ZERO-PAGE 100))
+Copyright � 1998 Association for Computing Machinery, Inc. Permission
+to include in application software or to make digital or hard copies
+of part or all of this work is subject to the following licensing
+agreement.  
+
+ACM Software License Agreement
+
+All software, both binary and source published by the Association for
+Computing Machinery (hereafter, Software) is copyrighted by the
+Association (hereafter, ACM) and ownership of all right, title and
+interest in and to the Software remains with ACM. By using or copying
+the Software, User agrees to abide by the terms of this Agreement.
+
+Noncommercial Use
+
+The ACM grants to you (hereafter, User) a royalty-free, nonexclusive
+right to execute, copy, modify and distribute both the binary and
+source code solely for academic, research and other similar
+noncommercial uses, subject to the following conditions:
+
+   1. User acknowledges that the Software is still in the development
+   stage and that it is being supplied "as is," without any support
+   services from ACM. Neither ACM nor the author makes any
+   representations or warranties, express or implied, including,
+   without limitation, any representations or warranties of the
+   merchantability or fitness for any particular purpose, or that the
+   application of the software, will not infringe on any patents or
+   other proprietary rights of others.  
+
+   2. ACM shall not be held liable for direct, indirect, incidental or
+   consequential damages arising from any claim by User or any third
+   party with respect to uses allowed under this Agreement, or from
+   any use of the Software.
+   
+   3. User agrees to fully indemnify and hold harmless ACM and/or the
+   author(s) of the original work from and against any and all claims,
+   demands, suits, losses, damages, costs and expenses arising out of
+   the User's use of the Software, including, without limitation,
+   arising out of the User's modification of the Software.  
+
+   4. User
+   may modify the Software and distribute that modified work to third
+   parties provided that: (a) if posted separately, it clearly
+   acknowledges that it contains material copyrighted by ACM (b) no
+   charge is associated with such copies, (c) User agrees to notify
+   ACM and the Author(s) of the distribution, and (d) User clearly
+   notifies secondary users that such modified work is not the
+   original Software.  
+
+   5. User agrees that ACM, the authors of the
+   original work and others may enjoy a royalty-free, non-exclusive
+   license to use, copy, modify and redistribute these modifications
+   to the Software made by the User and distributed to third parties
+   as a derivative work under this agreement.  
+
+   6. This agreement will terminate immediately upon User's breach of,
+   or non-compliance with, any of its terms. User may be held liable
+   for any copyright infringement or the infringement of any other
+   proprietary rights in the Software that is caused or facilitated by
+   the User's failure to abide by the terms of this agreement.
+
+   7. This agreement will be construed and enforced in accordance with
+   the law of the state of New York applicable to contracts performed
+   entirely within the State. The parties irrevocably consent to the
+   exclusive jurisdiction of the state or federal courts located in
+   the City of New York for all disputes concerning this agreement.
+
+Commercial Use
+
+Any User wishing to make a commercial use of the Software must contact
+ACM at permissions@acm.org to arrange an appropriate
+license. Commercial use includes (1) integrating or incorporating all
+or part of the source code into a product for sale or license by, or
+on behalf of, User to third parties, or (2) distribution of the binary
+or source code to third parties for use with a commercial product sold
+or licensed by, or on behalf of, User.
+
+Revised 6/98
 #+END_EXAMPLE
-..which could totally be used as the dissassembly format.
-
-COMFY-65 just outputs the raw code:
-#+BEGIN_SRC elisp
-  (comfy-init)
-  (seq-subseq comfy-mem (comfy-compile '(3 (1+ 100)) #x0680 nil))
-#+END_SRC
-
-#+RESULTS:
-: [230 100 230 100 230 100 76 128 6]
-
-I guess maybe I could port cl-comfy-6502 *back* to elisp.  It has the same crappy license as COMFY-65 though.  Not that I aspire to have commercial applications, but there are licensing requirements I don't want to deal with just for redistribution.
-** Monitor/debugger
-To be written
+* comfy
+This is COMFY-65 adapted to a modern emacs environment.
+** Roadmap [3/6]
+- [X] prefix names with `comfy-`
+- [X] separate examples
+- [ ] don't use global state
+- [X] provide `comfy` feature
+- [ ] organize files
+- [ ] simple package
 * References
-- https://github.com/gongo/emacs-nes includes a 6502 emulator!
-- https://www.atarimax.com/jindroush.atari.org/achip.html chips in the Atari
-** Comfy
 - http://home.pipeline.com/~hbaker1/sigplannotices/COMFY.TXT
 - http://home.pipeline.com/~hbaker1/sigplannotices/sigcol03.pdf
 - http://home.pipeline.com/~hbaker1/sigplannotices/sigcol04.pdf
 - http://home.pipeline.com/˜hbaker1/lisp/cfycmp.lsp: Link broken but see [[file:CFYCMP.LSP][local copy]] and an [[file:CFYCMP1.LSP][alternate version]] that seems to be from a slightly later period
-* [[file:comfy.el][comfy.el]]
-This is my version of COMFY-65 without the namespace pollution.  I used this to clean it up from the original:
-#+BEGIN_SRC emacs-lisp
-  (defun comfify (sym)
-    (interactive "SSymbol: ")
-    (replace-regexp (format "\\b%s\\b" sym)
-		    (format "comfy-%s" sym)))
-#+END_SRC
-It still uses a bunch of globals for state and should be given a proper data structure if it is going to be used.  It's questionable how useful it actually is and may merely serve as a model for my own version.  Also, what is the license?
-
-Dang it, the license is [[https://www.acm.org/publications/policies/software-copyright-notice][not that great]].  I think I need to write an assembler, but I think I am allowed to use COMFY-65 as a model.  Clearly my work so far is a derived work though and will need to be removed prior to distribution.
+* Usage example
 #+BEGIN_SRC elisp
   (comfy-init)
   (load-file "comfy-examples.el")
   (let* ((top comfy-f)
-	 (addr (comfy-compile upcwand
-			      'win	; XXX: This should probably
-			      'lose))	; result in some kind of error
+	 (addr (comfy-compile upcwand 0 0))
 	 (code (subseq comfy-mem addr top)))
     (apply 'concat
 	   (map 'list
@@ -97,37 +112,6 @@ Dang it, the license is [[https://www.acm.org/publications/policies/software-cop
 #+RESULTS:
 : a2 06 e0 0c b0 0a b5 0b 49 7f 95 0b e8 4c 04 00 a2 00 e0 0c b0 17 b5 0b a0 00 c0 0a b0 38 d9 5a 00 f0 04 c8 4c 1c 00 94 0c e8 4c 14 00 f8 a9 00 a2 00 e0 0c b0 07 75 0c e8 e8 4c 34 00 85 0d 18 65 0d 65 0d a2 01 e0 0c b0 07 75 0c e8 e8 4c 48 00 49 0f d0 01 60 00 60 
 
-* emacs-nes
-Just to demonstrate that the 6502 emulator works
-#+BEGIN_SRC sh
-  hg clone git+https://github.com/gongo/emacs-nes
-#+END_SRC
-#+BEGIN_SRC elisp :results silent
-  (add-to-list 'load-path (concat default-directory "emacs-nes"))
-  (load "nes.el")
-  "Loaded emacs-nes"
-#+END_SRC
-Tetris sourced from http://www.nesfiles.com/NES/Tetris/Tetris.nes
-#+BEGIN_SRC elisp :results silent
-  (nes "Tetris.nes")
-#+END_SRC
-* Scratch
-#+BEGIN_SRC elisp
-  ;; SRAM that appears twice
-  (defun e65-example-mapper (device addr)
-    ;; Ignore the 10th bit causing this chip to be mapped to
-    ;; 0x0000-0x1ffff and again to 0x2000-0x3ffff
-    (let ((addr (logand addr (lognot #x2000))))
-      ;; If modified addr is in lower 8K, use it.  otherwise return nil
-      ;; to prevent the call to read/write on the device
-      (and ((< addr #x2000) addr))))
-
-  ;; Each cycle, write to the bus; everything else will get their
-  ;; e65-device-write-function called
-  (defun e65-example-signal (device signals)
-    (and (member :phi2 signals)
-         (e65-device-write device #xabcd #xef)))
-#+END_SRC
 * COMMENT Config
 # Local Variables:
 # truncate-lines: nil
