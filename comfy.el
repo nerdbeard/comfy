@@ -197,24 +197,24 @@
                (eval (cadr i))))
         ;;; "i" indicates absolute indexed by i.
         ((eq (cadr i) 'i)
-         (comfy-ogen (+ (comfy-skeleton (car i)) 20) (eval (caddr i))))
+         (comfy-ogen (+ (comfy-skeleton (car i)) 20) (eval (cadr (cdr i)))))
         ;;; "j" indicates absolute indexed by j.
         ;;; this cannot be optimized for page zero addresses.
         ((eq (cadr i) 'j)
          (comfy-gen state 0) (comfy-gen state 0) (comfy-gen state (+ (comfy-skeleton (car i)) 24))
-         (comfy-ra state (comfy-f state) (eval (caddr i))))
+         (comfy-ra state (comfy-f state) (eval (cadr (cdr i)))))
         ;;; "\#" indicates immediate operand.
         ((eq (cadr i) '\#)
          (comfy-ogen (- (comfy-get (car i) 'skeleton) 8)
-               (logand (eval (caddr i)) 255)))
+               (logand (eval (cadr (cdr i))) 255)))
         ;;; "i@" indicates index by i, the indirect.
         ((eq (cadr i) 'i@)
          (comfy-ogen (comfy-skeleton (car i))
-               (logand (eval (caddr i)) 255)))
+               (logand (eval (cadr (cdr i))) 255)))
         ;;; "@j" indicates indirect, then index by j.
         ((eq (cadr i) '@j)
          (comfy-ogen (+ (comfy-skeleton (car i)) 16)
-               (logand (eval (caddr i)) 255)))))
+               (logand (eval (cadr (cdr i))) 255)))))
 
 (defun comfy-compile (state e win lose)
   ;;; comfy-compile expression e with success continuation "win" and
@@ -244,12 +244,12 @@
                            lose))))
         ((eq (car e) 'if)               ; if-then-else.
          (comfy-compile state (cadr e)
-                  (comfy-compile state (caddr e) win lose)
+                  (comfy-compile state (cadr (cdr e)) win lose)
                   (comfy-compile state (cadddr e) win lose)))
         ((eq (car e) 'while)            ; do-while.
          (let* ((l (comfy-genbr state 0))
                 (r (comfy-compile state (cadr e)
-                            (comfy-compile state (caddr e) l lose)
+                            (comfy-compile state (cadr (cdr e)) l lose)
                             win)))
            (comfy-ra state l r)
            r))
@@ -377,7 +377,7 @@
      ind
      (` (lambda (e)
           (, (append (` (comfy-cases e (, (append (` (lambda (, patt))) body))))
-                     (cddr (caddr (comfy-get where ind))))))))
+                     (cddr (cadr (cdr (comfy-get where ind)))))))))
     nil))
 
 (comfy-put 'star 'cmacro nil)
