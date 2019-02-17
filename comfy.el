@@ -8,9 +8,7 @@
 
 (defun comfy-put (symbol propname value)
   (let ((symbol (intern (concat "comfy-" (symbol-name symbol)))))
-    (put symbol
-	 propname ;; (format "comfy-%s" propname)
-	 value)))
+    (put symbol propname value)))
 
 (defun comfy-get (symbol propname)
   (let ((symbol (intern (concat "comfy-" (symbol-name symbol)))))
@@ -84,18 +82,12 @@
 (comfy-put 'return 'jump 96)
 (comfy-put 'resume 'jump 64)
 
-(defvar comfy-mem (make-vector 10 0)
-  "Vector where the compiled code is placed.")
-(setq comfy-mem (make-vector 100 0))
+(defun make-comfy (&optional env-size)
+  (let ((env-size (or env-size #x10000)))
+    (cons (1- env-size) (make-vector env-size 0))))
 
-(defvar comfy-f (length comfy-mem)
-  "Compiled code array pointer; it works its way down from the top.")
-(setq comfy-f (length comfy-mem))
-
-(defun comfy-init ()
-  ;; XXX NOT CALLED -- but useful
-  (fillarray comfy-mem 0)
-  (setq comfy-f (length comfy-mem)))
+(defmacro comfy-f (state) `(car ,state))
+(defmacro comfy-mem (state) `(cdr ,state))
 
 (defun comfy-subseq (v i)
   ;; XXX NOT CALLED -- is this any different than seq-subseq?
@@ -106,14 +98,14 @@
       (setq j (1+ j)))
     nv))
 
-(defun comfy-gen (obj)
+(defun comfy-gen (state obj)
   ;;; place one character "obj" into the stream.
   (assert (numberp obj))
   (assert (>= obj #x00))
   (assert (<= obj #xff))
-  (setq comfy-f (1- comfy-f))
-  (aset comfy-mem comfy-f obj)
-  comfy-f)
+  (setf (comfy-f state) (1- (comfy-f state)))
+  (aset (comfy-mem state) (comfy-f state) obj)
+  (comfy-f state))
 
 (defun comfy-testp (e)
   ;;; predicate to tell whether "e" is a test.
@@ -130,49 +122,53 @@
 (defun comfy-macrop (x)
   (and (symbolp x) (comfy-get x 'cmacro)))
 
-(defun comfy-ra (b a)
+(defun comfy-ra (state b a)
   ;;; replace the absolute address at the instruction "b"
   ;;; by the address "a".
   (let* ((ha (lsh a -8))
-         (la (logand a 255)))
-    (aset comfy-mem (1+ b) la)
-    (aset comfy-mem (+ b 2) ha))
+         (la (logand a 255))
+         (mem (comfy-mem state)))
+    (aset mem (1+ b) la)
+    (aset mem (+ b 2) ha))
   b)
 
-(defun comfy-inv (c)
+(defun comfy-inv (op)
   ;;; invert the condition for a branch.
   ;;; invert bit 5 (counting from the right).
-  (logxor c 32))
+  (logxor op 32))
 
-(defun comfy-genbr (win)
+(defun comfy-genbr (state win)
   ;;; generate an unconditional jump to "win".
-  (comfy-gen 0) (comfy-gen 0) (comfy-gen comfy-jmp) (comfy-ra comfy-f win))
+  (comfy-gen state 0) (comfy-gen state 0) (comfy-gen state comfy-jmp)
+  (comfy-ra state (comfy-f state) win))
 
 (defun comfy-8bitp (n)
+  ;;; t when -128 <= n <= 127; ie when n is an integer that can be
+  ;;; represented by a signed byte
   (let* ((m (logand n -128)))
     (or (= 0 m) (= -128 m))))
 
-(defun comfy-genbrc (c win lose)
+(defun comfy-genbrc (state cond win lose)
   ;;; generate an optimized conditional branch
   ;;; on condition c to "win" with failure to "lose".
-  (let* ((w (- win comfy-f)) (l (- lose comfy-f)))   ;;; Normalize to current point.
+  (let* ((w (- win (comfy-f state))) (l (- lose (comfy-f state))))   ;;; Normalize to current point.
     (cond ((= w l) win)
-          ((and (= l 0) (comfy-8bitp w)) (comfy-gen w) (comfy-gen c))
-          ((and (= w 0) (comfy-8bitp l)) (comfy-gen l) (comfy-gen (comfy-inv c)))
+          ((and (= l 0) (comfy-8bitp w)) (comfy-gen state w) (comfy-gen state cond))
+          ((and (= w 0) (comfy-8bitp l)) (comfy-gen state l) (comfy-gen state (comfy-inv cond)))
           ((and (comfy-8bitp l) (comfy-8bitp (- w 2)))
-           (comfy-gen l) (comfy-gen (comfy-inv c)) (comfy-gen (- w 2)) (comfy-gen c))
+           (comfy-gen state l) (comfy-gen state (comfy-inv cond)) (comfy-gen state (- w 2)) (comfy-gen state cond))
           ((and (comfy-8bitp w) (comfy-8bitp (- l 2)))
-           (comfy-gen w) (comfy-gen c) (comfy-gen (- l 2)) (comfy-gen (comfy-inv c)))
-          ((comfy-8bitp (- l 3)) (comfy-genbrc c (comfy-genbr win) lose))
-          (t (comfy-genbrc c win (comfy-genbr lose))))))
+           (comfy-gen state w) (comfy-gen state cond) (comfy-gen state (- l 2)) (comfy-gen state (comfy-inv cond)))
+          ((comfy-8bitp (- l 3)) (comfy-genbrc state cond (comfy-genbr state win) lose))
+          (t (comfy-genbrc state cond win (comfy-genbr state lose))))))
 
-(defun comfy-ogen (op a)
+(defun comfy-ogen (state op a)
   ;;; put out address and op code into stream.
   ;;; put out only one byte address, if possible.
   (let* ((ha (lsh a -8))
          (la (logand a 255)))
-    (cond ((= ha 0) (comfy-gen la) (comfy-gen op))
-          (t (comfy-gen ha) (comfy-gen la) (comfy-gen (+ op 8))))))
+    (cond ((= ha 0) (comfy-gen state la) (comfy-gen state op))
+          (t (comfy-gen state ha) (comfy-gen state la) (comfy-gen state (+ op 8))))))
 
 (defun comfy-skeleton (op)
   ;;; return the skeleton of the op code "op".
@@ -180,20 +176,21 @@
   ;;; the code for "accumulator" (groups 0,2) or "immediate" (1) addressing.
   (logand (comfy-get op 'skeleton) 227))
 
-(defun comfy-emit (i win)
+(defun comfy-emit (state i win)
   ;;; place the unconditional instruction "i" into the stream with
   ;;; success continuation "win".
-  (cond ((not (= win comfy-f)) (comfy-emit i (comfy-genbr win)))
+  (cond ((not (= win (comfy-f state))) (comfy-emit state i (comfy-genbr state win)))
         ;;; atom is a single character instruction.
-        ((symbolp i) (comfy-gen (comfy-get i 'skeleton)))
+        ((symbolp i) (comfy-gen state (comfy-get i 'skeleton)))
         ;;; no op code indicates a subroutine call.
         ((null (cdr i))
-         (comfy-gen 0) (comfy-gen 0) (comfy-gen comfy-jsr) (comfy-ra comfy-f (eval (car i))))
+         (comfy-gen state 0) (comfy-gen state 0) (comfy-gen state comfy-jsr)
+         (comfy-ra state (comfy-f state) (eval (car i))))
         ;;; "a" indicates the accumulator.
-        ((eq (cadr i) 'a) (comfy-emit (car i) win))
+        ((eq (cadr i) 'a) (comfy-emit state (car i) win))
         ;;; "s" indicates the stack.
         ((eq (cadr i) 's)
-         (comfy-gen (+ (comfy-skeleton (car i)) 24)))
+         (comfy-gen state (+ (comfy-skeleton (car i)) 24)))
         ;;; length=2 indicates absolute addressing.
         ((= (length i) 2)
          (comfy-ogen (+ (comfy-skeleton (car i)) 4)
@@ -204,8 +201,8 @@
         ;;; "j" indicates absolute indexed by j.
         ;;; this cannot be optimized for page zero addresses.
         ((eq (cadr i) 'j)
-         (comfy-gen 0) (comfy-gen 0) (comfy-gen (+ (comfy-skeleton (car i)) 24))
-         (comfy-ra comfy-f (eval (caddr i))))
+         (comfy-gen state 0) (comfy-gen state 0) (comfy-gen state (+ (comfy-skeleton (car i)) 24))
+         (comfy-ra state (comfy-f state) (eval (caddr i))))
         ;;; "\#" indicates immediate operand.
         ((eq (cadr i) '\#)
          (comfy-ogen (- (comfy-get (car i) 'skeleton) 8)
@@ -219,47 +216,47 @@
          (comfy-ogen (+ (comfy-skeleton (car i)) 16)
                (logand (eval (caddr i)) 255)))))
 
-(defun comfy-compile (e win lose)
+(defun comfy-compile (state e win lose)
   ;;; comfy-compile expression e with success continuation "win" and
   ;;; failure continuation "lose".
   ;;; "win" an "lose" are both addresses of stuff higher in memory.
-  (cond ((numberp e) (comfy-gen e))           ; allow constants.
+  (cond ((numberp e) (comfy-gen state e))           ; allow constants.
         ((comfy-macrop e)
-         (comfy-compile (apply (comfy-get e 'cmacro) (list e)) win lose))
-        ((comfy-jumpp e) (comfy-gen (comfy-get e 'jump))) ; must be return or resume.
-        ((comfy-actionp e) (comfy-emit e win))      ; single byte instruction.
-        ((comfy-testp e) (comfy-genbrc (comfy-get e 'test) win lose)) ; test instruction
-        ((eq (car e) 'not) (comfy-compile (cadr e) lose win))
+         (comfy-compile state (apply (comfy-get e 'cmacro) (list e)) win lose))
+        ((comfy-jumpp e) (comfy-gen state (comfy-get e 'jump))) ; must be return or resume.
+        ((comfy-actionp e) (comfy-emit state e win))      ; single byte instruction.
+        ((comfy-testp e) (comfy-genbrc state (comfy-get e 'test) win lose)) ; test instruction
+        ((eq (car e) 'not) (comfy-compile state (cadr e) lose win))
         ((eq (car e) 'seq)
          (cond ((null (cdr e)) win)
-               (t (comfy-compile (cadr e)
-                           (comfy-compile (cons 'seq (cddr e)) win lose)
+               (t (comfy-compile state (cadr e)
+                           (comfy-compile state (cons 'seq (cddr e)) win lose)
                            lose))))
         ((eq (car e) 'loop)
-         (let* ((l (comfy-genbr 0))
-                (r (comfy-compile (cadr e) l lose)))
-           (comfy-ra l r)
+         (let* ((l (comfy-genbr state 0))
+                (r (comfy-compile state (cadr e) l lose)))
+           (comfy-ra state l r)
            r))
         ((numberp (car e))              ; duplicate n times.
          (cond ((zerop (car e)) win)
-               (t (comfy-compile (cons (1- (car e)) (cdr e))
-                           (comfy-compile (cadr e) win lose)
+               (t (comfy-compile state (cons (1- (car e)) (cdr e))
+                           (comfy-compile state (cadr e) win lose)
                            lose))))
         ((eq (car e) 'if)               ; if-then-else.
-         (comfy-compile (cadr e)
-                  (comfy-compile (caddr e) win lose)
-                  (comfy-compile (cadddr e) win lose)))
+         (comfy-compile state (cadr e)
+                  (comfy-compile state (caddr e) win lose)
+                  (comfy-compile state (cadddr e) win lose)))
         ((eq (car e) 'while)            ; do-while.
-         (let* ((l (comfy-genbr 0))
-                (r (comfy-compile (cadr e)
-                            (comfy-compile (caddr e) l lose)
+         (let* ((l (comfy-genbr state 0))
+                (r (comfy-compile state (cadr e)
+                            (comfy-compile state (caddr e) l lose)
                             win)))
-           (comfy-ra l r)
+           (comfy-ra state l r)
            r))
         ;;; allow for COMFY macros !
         ((comfy-macrop (car e))
-         (comfy-compile (apply (comfy-get (car e) 'cmacro) (list e)) win lose))
-        (t (comfy-emit e win))))
+         (comfy-compile state (apply (comfy-get (car e) 'cmacro) (list e)) win lose))
+        (t (comfy-emit state e win))))
 
 (comfy-put
  'alt
@@ -316,24 +313,24 @@
         (t (let* ((p (car pl)))
              (append (` ((l (, p)) push)) (comfy-genpush (cdr pl)))))))
 
-(defun comfy-match (p e comfy-f alist)
-  ;;; comfy-f is a function which is executed if the comfy-match fails.
-  ;;; comfy-f had better not return.
+(defun comfy-match (p e f alist)
+  ;;; f is a function which is executed if the comfy-match fails.
+  ;;; f had better not return.
   (cond ((comfy-constantp p)
          (cond ((eq p e) alist)
-               (t (funcall comfy-f))))
+               (t (funcall f))))
         ((comfy-variablep p) (cons (cons (cadr p) e) alist))
         ((eq (car p) 'quote) (cond ((eq (cadr p) e) alist)
-                                   (t (funcall comfy-f))))
+                                   (t (funcall f))))
         ((comfy-predicate p) (cond ((funcall (cadr p) e) alist)
-                             (t (funcall comfy-f))))
-        ((atom e) (funcall comfy-f))
+                             (t (funcall f))))
+        ((atom e) (funcall f))
         (t (comfy-match (car p)
                   (car e)
-                  comfy-f
+                  f
                   (comfy-match (cdr p)
                          (cdr e)
-                         comfy-f
+                         f
                          alist)))))
 
 (defun comfy-predicate (x)
@@ -356,16 +353,16 @@
   ;;; "fail" had better not return.
   (cond ((null fl) (funcall fail))
         (t (catch 'comfy-fapplyl
-             (comfy-fapply (car fl) a
+             ((comfy-f c)apply (car fl) a
 			   '(lambda ()
 			      (throw 'comfy-fapplyl
 				     (comfy-fapplyl (cdr fl) a fail))))))))
 
-(defun comfy-fapply (comfy-f a fail)
-  (let* ((alist (comfy-match (cadr comfy-f) a fail nil)))
+(defun comfy-fapply (f a fail)
+  (let* ((alist (comfy-match (cadr f) a fail nil)))
     (apply (cons 'lambda
                  (cons (mapcar 'car alist)
-                       (cddr comfy-f)))
+                       (cddr f)))
            (mapcar 'cdr alist))))
 
 (defmacro comfy-define (&rest a)

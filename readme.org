@@ -81,12 +81,14 @@ Revised 6/98
 #+END_EXAMPLE
 * comfy
 This is COMFY-65 adapted to a modern emacs environment.
-** Roadmap [3/6]
+** Roadmap [4/8]
 - [X] prefix names with `comfy-`
 - [X] separate examples
-- [ ] don't use global state
+- [X] don't use global state
 - [X] provide `comfy` feature
-- [ ] organize files
+- [ ] reflow code layout
+- [ ] organize for outshine
+- [ ] organize file tree
 - [ ] simple package
 * References
 - http://home.pipeline.com/~hbaker1/sigplannotices/COMFY.TXT
