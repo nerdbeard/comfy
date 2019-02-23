@@ -176,27 +176,27 @@ more information."
 (defvar comfy-jmp #x4C)
 (defvar comfy-jsr #x20)
 ;;;; Compiler
-(defun make-comfy (&optional env-size)
+(defun make-comfy-image (&optional env-size)
   "Typical ENV-SIZE is 2^16 or #x10000."
   (let ((env-size (or env-size #x10000)))
     (cons (1- env-size) (make-vector env-size 0))))
 
-(defmacro comfy-f (state)
-  "Compiled code array pointer of STATE; it works its way down from the top."
-  `(car ,state))
+(defmacro comfy-f (image)
+  "Compiled code array pointer of IMAGE; it works its way down from the top."
+  `(car ,image))
 
-(defmacro comfy-mem (state)
-  "Vector of STATE where the compiled code is placed."
-  `(cdr ,state))
+(defmacro comfy-mem (image)
+  "Vector of IMAGE where the compiled code is placed."
+  `(cdr ,image))
 
-(defun comfy-gen (state obj)
-  "In STATE, place one character OBJ into its stream."
+(defun comfy-gen (image obj)
+  "In IMAGE, place one character OBJ into its stream."
   (assert (numberp obj))
   (assert (>= obj #x00))
   (assert (<= obj #xFF))
-  (let ((f-1 (1- (comfy-f state))))
-    (setf (comfy-f state) f-1)
-    (aset (comfy-mem state) f-1 obj)
+  (let ((f-1 (1- (comfy-f image))))
+    (setf (comfy-f image) f-1)
+    (aset (comfy-mem image) f-1 obj)
     f-1))
 
 (defun comfy-testp (e)
@@ -215,11 +215,11 @@ more information."
   "Predicate to tell whether X is a cmacro."
   (and (symbolp x) (comfy--get x 'cmacro)))
 
-(defun comfy-ra (state b a)
-  "In STATE, replace the absolute address at instruction B with address A."
+(defun comfy-ra (image b a)
+  "In IMAGE, replace the absolute address at instruction B with address A."
   (let* ((ha (lsh a -8))
          (la (logand a #xFF))
-         (mem (comfy-mem state)))
+         (mem (comfy-mem image)))
     (aset mem (1+ b) la)
     (aset mem (+ b 2) ha))
   b)
@@ -229,12 +229,12 @@ more information."
   ;; invert bit 5 (counting from the right).
   (logxor op #x20))
 
-(defun comfy-genbr (state win)
-  "In STATE, generate an unconditional jump to WIN."
-  (comfy-gen state 0)
-  (comfy-gen state 0)
-  (comfy-gen state comfy-jmp)
-  (comfy-ra state (comfy-f state) win))
+(defun comfy-genbr (image win)
+  "In IMAGE, generate an unconditional jump to WIN."
+  (comfy-gen image 0)
+  (comfy-gen image 0)
+  (comfy-gen image comfy-jmp)
+  (comfy-ra image (comfy-f image) win))
 
 (defun comfy-8bitp (n)
   "True when N is an integer that can be represented by a signed byte.
@@ -242,43 +242,43 @@ That is, when -128 <= N <= 127."
   (let* ((m (logand n -128)))
     (or (= 0 m) (= -128 m))))
 
-(defun comfy-genbrc (state cond win lose)
-  "In STATE, generate a branch on COND to WIN with failure to LOSE.
+(defun comfy-genbrc (image cond win lose)
+  "In IMAGE, generate a branch on COND to WIN with failure to LOSE.
 The optimal conditional branch is generated."
-  (let* ((w (- win (comfy-f state)))
-         (l (- lose (comfy-f state)))) ;; Normalize to current point.
+  (let* ((w (- win (comfy-f image)))
+         (l (- lose (comfy-f image)))) ;; Normalize to current point.
     (cond ((= w l) win)
           ((and (= l 0) (comfy-8bitp w))
-           (comfy-gen state w) (comfy-gen state cond))
+           (comfy-gen image w) (comfy-gen image cond))
           ((and (= w 0) (comfy-8bitp l))
-           (comfy-gen state l) (comfy-gen state (comfy-inv cond)))
+           (comfy-gen image l) (comfy-gen image (comfy-inv cond)))
           ((and (comfy-8bitp l) (comfy-8bitp (- w 2)))
-           (comfy-gen state l)
-           (comfy-gen state (comfy-inv cond))
-           (comfy-gen state (- w 2))
-           (comfy-gen state cond))
+           (comfy-gen image l)
+           (comfy-gen image (comfy-inv cond))
+           (comfy-gen image (- w 2))
+           (comfy-gen image cond))
           ((and (comfy-8bitp w) (comfy-8bitp (- l 2)))
-           (comfy-gen state w)
-           (comfy-gen state cond)
-           (comfy-gen state (- l 2))
-           (comfy-gen state (comfy-inv cond)))
+           (comfy-gen image w)
+           (comfy-gen image cond)
+           (comfy-gen image (- l 2))
+           (comfy-gen image (comfy-inv cond)))
           ((comfy-8bitp (- l 3))
-           (comfy-genbrc state cond (comfy-genbr state win) lose))
+           (comfy-genbrc image cond (comfy-genbr image win) lose))
           (t
-           (comfy-genbrc state cond win (comfy-genbr state lose))))))
+           (comfy-genbrc image cond win (comfy-genbr image lose))))))
 
-(defun comfy-ogen (state op address)
-  "In STATE, put out OP code and ADDRESS into stream.
+(defun comfy-ogen (image op address)
+  "In IMAGE, put out OP code and ADDRESS into stream.
 Put out only one byte address, if possible."
   (let* ((ha (lsh address -8))
          (la (logand address #xFF)))
     (cond ((= ha 0)
-           (comfy-gen state la)
-           (comfy-gen state op))
+           (comfy-gen image la)
+           (comfy-gen image op))
           (t
-           (comfy-gen state ha)
-           (comfy-gen state la)
-           (comfy-gen state (+ op 8))))))
+           (comfy-gen image ha)
+           (comfy-gen image la)
+           (comfy-gen image (+ op 8))))))
 
 (defun comfy-skeleton (op)
   "Return the skeleton of the op code OP.
@@ -286,108 +286,108 @@ The \"skeleton\" property of op contains either the code for
 \"accumulator\" (groups 0,2) or \"immediate\" (1) addressing."
   (logand (comfy--get op 'skeleton) #xE3))
 
-(defun comfy-emit (state i win)
-  "In STATE, place I into the stream with success continuation WIN.
+(defun comfy-emit (image i win)
+  "In IMAGE, place I into the stream with success continuation WIN.
 I is an unconditional instruction."
-  (cond ((not (= win (comfy-f state)))
-         (comfy-emit state i (comfy-genbr state win)))
+  (cond ((not (= win (comfy-f image)))
+         (comfy-emit image i (comfy-genbr image win)))
         ;; atom is a single character instruction.
         ((symbolp i)
-         (comfy-gen state (comfy--get i 'skeleton)))
+         (comfy-gen image (comfy--get i 'skeleton)))
         ;; no op code indicates a subroutine call.
         ((null (cdr i))
-         (comfy-gen state 0)
-         (comfy-gen state 0)
-         (comfy-gen state comfy-jsr)
-         (comfy-ra state (comfy-f state) (eval (car i))))
+         (comfy-gen image 0)
+         (comfy-gen image 0)
+         (comfy-gen image comfy-jsr)
+         (comfy-ra image (comfy-f image) (eval (car i))))
         ;; "a" indicates the accumulator.
         ((eq (cadr i) 'a)
-         (comfy-emit state (car i) win))
+         (comfy-emit image (car i) win))
         ;; "s" indicates the stack.
         ((eq (cadr i) 's)
-         (comfy-gen state (+ (comfy-skeleton (car i)) #x18)))
+         (comfy-gen image (+ (comfy-skeleton (car i)) #x18)))
         ;; length=2 indicates absolute addressing.
         ((= (length i) 2)
-         (comfy-ogen state
+         (comfy-ogen image
                      (+ (comfy-skeleton (car i)) #x04)
                      (eval (cadr i))))
         ;; "i" indicates absolute indexed by i.
         ((eq (cadr i) 'i)
-         (comfy-ogen state
+         (comfy-ogen image
                      (+ (comfy-skeleton (car i)) #x14)
                      (eval (cadr (cdr i)))))
         ;; "j" indicates absolute indexed by j.
         ;; this cannot be optimized for page zero addresses.
         ((eq (cadr i) 'j)
-         (comfy-gen state 0)
-         (comfy-gen state 0)
-         (comfy-gen state (+ (comfy-skeleton (car i)) #x18))
-         (comfy-ra state (comfy-f state) (eval (cadr (cdr i)))))
+         (comfy-gen image 0)
+         (comfy-gen image 0)
+         (comfy-gen image (+ (comfy-skeleton (car i)) #x18))
+         (comfy-ra image (comfy-f image) (eval (cadr (cdr i)))))
         ;; "\#" indicates immediate operand.
         ((eq (cadr i) '\#)
-         (comfy-ogen state
+         (comfy-ogen image
                      (- (comfy--get (car i) 'skeleton) #x08)
                      (logand (eval (cadr (cdr i))) #xFF)))
         ;; "i@" indicates index by i, the indirect.
         ((eq (cadr i) 'i@)
-         (comfy-ogen state
+         (comfy-ogen image
                      (comfy-skeleton (car i))
                      (logand (eval (cadr (cdr i))) #xFF)))
         ;; "@j" indicates indirect, then index by j.
         ((eq (cadr i) '@j)
-         (comfy-ogen state
+         (comfy-ogen image
                      (+ (comfy-skeleton (car i)) #x10)
                      (logand (eval (cadr (cdr i))) #xFF)))))
 
-(defun comfy-compile (state e win lose)
-  "In STATE, compile expression E with continuations WIN and LOSE.
+(defun comfy-compile (image e win lose)
+  "In IMAGE, compile expression E with continuations WIN and LOSE.
 WIN and LOSE are both addresses of stuff higher in memory."
   (cond ((numberp e) ; allow constants.
-         (comfy-gen state e))
+         (comfy-gen image e))
         ((comfy-macrop e)
-         (comfy-compile state (apply (comfy--get e 'cmacro) (list e))
+         (comfy-compile image (apply (comfy--get e 'cmacro) (list e))
                         win lose))
         ((comfy-jumpp e) ; must be return or resume.
-         (comfy-gen state (comfy--get e 'jump)))
+         (comfy-gen image (comfy--get e 'jump)))
         ((comfy-actionp e) ; single byte instruction.
-         (comfy-emit state e win))
+         (comfy-emit image e win))
         ((comfy-testp e) ; test instruction
-         (comfy-genbrc state (comfy--get e 'test) win lose))
+         (comfy-genbrc image (comfy--get e 'test) win lose))
         ((eq (car e) 'not)
-         (comfy-compile state (cadr e) lose win))
+         (comfy-compile image (cadr e) lose win))
         ((eq (car e) 'seq)
          (cond ((null (cdr e)) win)
-               (t (comfy-compile state (cadr e)
-                                 (comfy-compile state (cons 'seq (cddr e))
+               (t (comfy-compile image (cadr e)
+                                 (comfy-compile image (cons 'seq (cddr e))
                                                 win lose)
                                  lose))))
         ((eq (car e) 'loop)
-         (let* ((l (comfy-genbr state 0))
-                (r (comfy-compile state (cadr e) l lose)))
-           (comfy-ra state l r)
+         (let* ((l (comfy-genbr image 0))
+                (r (comfy-compile image (cadr e) l lose)))
+           (comfy-ra image l r)
            r))
         ((numberp (car e)) ; duplicate n times.
          (cond ((zerop (car e)) win)
-               (t (comfy-compile state (cons (1- (car e)) (cdr e))
-                                 (comfy-compile state (cadr e) win lose)
+               (t (comfy-compile image (cons (1- (car e)) (cdr e))
+                                 (comfy-compile image (cadr e) win lose)
                                  lose))))
         ((eq (car e) 'if) ; if-then-else.
-         (comfy-compile state (cadr e)
-                        (comfy-compile state (cadr (cdr e)) win lose)
-                        (comfy-compile state (cadddr e) win lose)))
+         (comfy-compile image (cadr e)
+                        (comfy-compile image (cadr (cdr e)) win lose)
+                        (comfy-compile image (cadddr e) win lose)))
         ((eq (car e) 'while) ; do-while.
-         (let* ((l (comfy-genbr state 0))
-                (r (comfy-compile state (cadr e)
-                                  (comfy-compile state (cadr (cdr e)) l lose)
+         (let* ((l (comfy-genbr image 0))
+                (r (comfy-compile image (cadr e)
+                                  (comfy-compile image (cadr (cdr e)) l lose)
                                   win)))
-           (comfy-ra state l r)
+           (comfy-ra image l r)
            r))
         ;; allow for COMFY macros !
         ((comfy-macrop (car e))
-         (comfy-compile state (apply (comfy--get (car e) 'cmacro) (list e))
+         (comfy-compile image (apply (comfy--get (car e) 'cmacro) (list e))
                         win lose))
         (t
-         (comfy-emit state e win))))
+         (comfy-emit image e win))))
 ;;;; Language
 (comfy--put
  'alt
