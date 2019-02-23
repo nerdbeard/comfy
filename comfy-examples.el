@@ -1,27 +1,27 @@
 (setq typical '(seq c=0 binary enable v=0))
 
-(setq typ1 '(alt (seq <0\? (1+ m))
+(setq typ1 '(alt (seq <0? (1+ m))
                  (1- b))
       m 100
       b 101)
 
-(setq typ2 '(not (loop (seq <0\? (1+ m)))))
+(setq typ2 '(not (loop (seq <0? (1+ m)))))
 
-(setq typ3 '(star (seq (li s) ~=0\? pop)))
+(setq typ3 '(star (seq (li s) ~=0? pop)))
 
-(setq typ3 '(not (loop (seq (li s) ~=0\? pop))))
+(setq typ3 '(not (loop (seq (li s) ~=0? pop))))
 
 (setq incr
       '(seq (li \# 0)
             c=1
-            (while c=1\?
+            (while c=1?
               (seq (l i n) (+ \# 0) (st i n))))
       n 32)
 
 (setq sum
       '(seq (l \# 0)
             li
-            (while (seq (ci n) ~=\?)
+            (while (seq (ci n) ~=?)
               (seq (+ i A) i+1)))
       A 29)
 
@@ -29,7 +29,7 @@
       '(seq (l x) (st xp)
             (l y) (st y0p)
             (l \# 0) (st y1p) (st z0) (st z1)
-            (while (seq (lsr xp) ~=\?)
+            (while (seq (lsr xp) ~=?)
               (seq c=0 (l z0) (+ y0p) (st z0)
                    (l z1) (+ y1p) (st z1)
                    (asl y0p) (rl y1p)))))
@@ -39,8 +39,9 @@
       y1p 5 z1 6
       z0 7)
 
-(setq masktable
-      '(comfy-compile '(seq 128 64 32 16 8 4 2 1) 0 0)
+(setq comfy-example (make-comfy))
+
+(setq masktable '(comfy-compile comfy-example '(seq 128 64 32 16 8 4 2 1) 0 0)
       p 8)
 
 (setq testb
@@ -68,7 +69,7 @@
 
 ;;; Routines for the Universal Product Code Wand.  Requires 88 bytes+table.
 (setq upctable
-      (comfy-compile '(seq 13 25 19 61 35 49 47 59 55 11) 0 0))
+      (comfy-compile comfy-example '(seq 13 25 19 61 35 49 47 59 55 11) 0 0))
 
 (setq
  code 11
@@ -85,7 +86,7 @@
               (not
                (forj (\# 0) (\# 10)
                      (c j upctable)
-                     ~=\?))             ; fail if equal.
+                     ~=?))             ; fail if equal.
               (stj i digit))            ; store index of upctable.
         decimal                         ; set decimal arithmetic mode.
         (l \# 0)                        ; clear ac.
@@ -99,7 +100,9 @@
               (+ i digit)               ; loop cotrol clears carry.
               i+1)                      ; only every other one.
         (lxor \# 15)                    ; select low decimal digit.
-        =0\?                            ; fails if non-zero.
+        =0?                            ; fails if non-zero.
         return)
    (seq trap				; signal failure.
         return)))
+
+(comfy-compile comfy-example upcwand 0 0)
