@@ -404,7 +404,7 @@ WIN and LOSE are both addresses of stuff higher in memory."
  'cmacro
  '(lambda (e)
     (let* ((p (cadr e)) (pl (cddr e)))
-      (sublis (list (cons 'pushes (comfy-genpush pl))
+      (sublis (list (cons 'pushes (comfy--genpush pl))
                     (cons 'p p)
                     (cons 'n (length pl)))
               '(seq (seq . pushes)
@@ -450,8 +450,8 @@ Supports the lambda cmacro."
                        (list (car pl)))
                  (comfy-genmoves (cdr pl))))))
 
-(defun comfy-genpush (pl)
-  "Generate push instructions for parameter list PL.
+(defun comfy--genpush (pl)
+  "Generate load and push instructions for each address in list PL.
 Supports the call cmacro by copying parameters to the stack."
   (cond ((null pl) pl)
         (t (let* ((p (car pl)))
