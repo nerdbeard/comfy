@@ -176,10 +176,10 @@ more information."
 (defvar comfy-jmp #x4C)
 (defvar comfy-jsr #x20)
 ;;;; Compiler
-(defun make-comfy-image (&optional env-size)
-  "Typical ENV-SIZE is 2^16 or #x10000."
-  (let ((env-size (or env-size #x10000)))
-    (cons (1- env-size) (make-vector env-size 0))))
+(defun make-comfy-image (&optional size)
+  "Typical SIZE is 2^16 or #x10000."
+  (let ((size (or size #x10000)))
+    (cons (1- size) (make-vector size 0))))
 
 (defmacro comfy-f (image)
   "Compiled code array pointer of IMAGE; it works its way down from the top."
