@@ -179,7 +179,7 @@ more information."
 (defun make-comfy-image (&optional size)
   "Typical SIZE is 2^16 or #x10000."
   (let ((size (or size #x10000)))
-    (cons (1- size) (make-vector size 0))))
+    (cons size (make-vector size 0))))
 
 (defmacro comfy-f (image)
   "Compiled code array pointer of IMAGE; it works its way down from the top."
@@ -366,7 +366,7 @@ WIN and LOSE are both addresses of stuff higher in memory."
                 (r (comfy-compile image (cadr e) l lose)))
            (comfy-ra image l r)
            r))
-        ((numberp (car e)) ; duplicate n times.
+        ((and (cdr e) (numberp (car e))) ; duplicate n times.
          (cond ((zerop (car e)) win)
                (t (comfy-compile image (cons (1- (car e)) (cdr e))
                                  (comfy-compile image (cadr e) win lose)
@@ -434,7 +434,7 @@ WIN and LOSE are both addresses of stuff higher in memory."
   "Generate xch items for parameter list PL.
 Supports the lambda cmacro."
   (cond ((null pl) pl)
-        (t (cons (list 'xch
+        (t (cons (list 'xch ; XXX the xch cmacro is not defined, see CFYCMP.LSP
                        (list 'i
                              (+ #x102 (length pl)))
                        (list (car pl)))
@@ -511,7 +511,7 @@ Supports the call cmacro by copying parameters to the stack."
            (mapcar 'cdr alist))))
 
 (defmacro comfy-define (ind patt &rest body)
-  "Place a macro in the IND property of a symbol extracted from PATT;
+  "Place a cmacro in the IND property of a symbol extracted from PATT;
 macro defined by BODY.
 
 PATT can be a symbol or a list with a symbol as its first
@@ -546,6 +546,7 @@ element.  PATT is used as the parameter list of a lambda."
 (comfy-define cmacro (move ,x ,y)
               `(seq ,(append '(l) x)
                     ,(append '(st) y)))
+
 (comfy--put 'prog 'cmacro nil)
 
 (comfy-define cmacro (prog (,v) . ,body)
@@ -582,4 +583,52 @@ element.  PATT is used as the parameter list of a lambda."
                            ,(append '(l) v)))))
 ;;;; Feature
 (provide 'comfy)
+;;;; Tests
+(defmacro with-comfy-image (&rest body)
+  "Execute BODY with IMAGE defined."
+  `(let ((image (make-comfy-image))) ,@body))
+
+(defun comfy--expect-image (vect)
+  "Top of memory pointed to by comfy-f should equal VECT."
+  (should (equal (subseq (comfy-mem image) (comfy-f image)) vect)))
+
+(ert-deftest comfy-image ()
+  (with-comfy-image
+   (comfy--expect-image [])))
+
+(ert-deftest comfy-emit-jump ()
+  (with-comfy-image
+   (comfy-emit image '(#x600) 0)
+   (comfy--expect-image (vector comfy-jsr 0 6 comfy-jmp 0 0))))
+
+(ert-deftest comfy-compile-null ()
+  (with-comfy-image
+   (comfy-compile image '(seq) 0 0)
+   (comfy--expect-image [])))
+
+(ert-deftest comfy-compile-number ()
+  (with-comfy-image
+   (let ((addr (comfy-compile image 42 0 0)))
+     (comfy--expect-image [42]))))
+
+(ert-deftest comfy-compile-numbers ()
+  (with-comfy-image
+   (let ((addr (comfy-compile image '(seq 1 2 3) 0 0)))
+     (comfy--expect-image [1 2 3]))))
+
+(ert-deftest comfy-compile-jump ()
+  (with-comfy-image
+   (comfy-compile image '(#x600) 0 0)
+   (comfy--expect-image (vector comfy-jsr 0 6 comfy-jmp 0 0))))
+
+(ert-deftest comfy-compile-repeat ()
+  (with-comfy-image
+   (comfy-compile image '(3 (seq  2 1)) 0 0)
+   (comfy--expect-image [2 1 2 1 2 1])))
+
+(ert-deftest comfy-compile-call ()
+  (with-comfy-image
+   (comfy-compile image '(call #x600 1 2 3) 0 0)
+   (comfy--expect-image [165 1 72 165 2 72 165 3 72 32 0 6 186 232 232 232 154 76 0 0])))
+
 ;;; comfy.el ends here
