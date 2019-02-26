@@ -444,7 +444,7 @@ WIN and LOSE are both addresses of stuff higher in memory."
   "Generate xch items for parameter list PL.
 Supports the lambda cmacro."
   (cond ((null pl) pl)
-        (t (cons (list 'xch ; XXX the xch cmacro is not defined, see CFYCMP.LSP
+        (t (cons (list 'xch
                        (list 'i
                              (+ #x102 (length pl)))
                        (list (car pl)))
@@ -591,76 +591,78 @@ element.  PATT is used as the parameter list of a lambda."
                       (seq ,(append '(seq) body)
                            ,(append '(1+) v)
                            ,(append '(l) v)))))
+
+(comfy--put 'xch 'cmacro nil)
+
+;; exchange 2 bytes.
+(comfy-define cmacro (xch ,x ,y)
+              `(seq (l ,x)
+                    push
+                    (l ,y) (st ,x)      ; XXX Is it okay to re-eval args?
+                    pop
+                    (st ,y)))
 ;;;; Tests
 (defmacro with-comfy-image (&rest body)
-  "Execute BODY with IMAGE defined."
-  `(let ((image (make-comfy-image))) ,@body))
+  "Execute BODY with IMAGE defined.  Return the compiled code."
+  `(let ((image (make-comfy-image)))
+     ,@body
+     (subseq (comfy-mem image) (comfy-f image))))
 
-(defun comfy--expect-image (vect)
+(defmacro comfy--expect-image (vect &rest body)
   "Top of memory pointed to by comfy-f should equal VECT."
-  (should (equal (subseq (comfy-mem image) (comfy-f image)) vect)))
+  `(should (equal ,vect (with-comfy-image ,@body))))
 
 (ert-deftest comfy-image ()
-  (with-comfy-image
-   (comfy--expect-image [])))
+  (comfy--expect-image [] ()))
 
 (ert-deftest comfy-emit-jump ()
-  (with-comfy-image
-   (comfy-emit image '(#x600) 0)
-   (comfy--expect-image (vector comfy-jsr 0 6 comfy-jmp 0 0))))
+  (comfy--expect-image
+   (vector comfy-jsr 0 6)
+   (comfy-emit image '(#x600) #x10000)))
 
 (ert-deftest comfy-compile-null ()
-  (with-comfy-image
-   (comfy-compile image '(seq) 0 0)
-   (comfy--expect-image [])))
+  (comfy--expect-image [] (comfy-compile image '(seq) 0 0)))
 
 (ert-deftest comfy-compile-number ()
-  (with-comfy-image
-   (let ((addr (comfy-compile image 42 0 0)))
-     (comfy--expect-image [42]))))
+  (comfy--expect-image [42] (comfy-compile image 42 0 0)))
 
 (ert-deftest comfy-compile-numbers ()
-  (with-comfy-image
-   (let ((addr (comfy-compile image '(seq 1 2 3) 0 0)))
-     (comfy--expect-image [1 2 3]))))
+  (comfy--expect-image [1 2 3]
+                       (comfy-compile image '(seq 1 2 3) 0 0)))
 
 (ert-deftest comfy-compile-jump ()
-  (with-comfy-image
-   (comfy-compile image '(#x600) 0 0)
-   (comfy--expect-image (vector comfy-jsr 0 6 comfy-jmp 0 0))))
+  (comfy--expect-image (vector comfy-jsr 0 6)
+                       (comfy-compile image '(#x600) #x10000 0)))
 
 (ert-deftest comfy-compile-repeat ()
-  (with-comfy-image
-   (comfy-compile image '(3 (seq  2 1)) 0 0)
-   (comfy--expect-image [2 1 2 1 2 1])))
+  (comfy--expect-image [2 1 2 1 2 1]
+                       (comfy-compile image '(3 (seq 2 1)) 0 0)))
 
 (ert-deftest comfy-compile-call ()
-  (with-comfy-image
-   (comfy-compile image '(call #x600 1 2 3) 0 0)
-   (comfy--expect-image [165 1 72 165 2 72 165 3 72 32 0 6 186 232 232 232 154 76 0 0])))
+  (comfy--expect-image [165 1 72 165 2 72 165 3 72 32 0 6 186 232 232 232 154]
+                       (comfy-compile image '(call #x600 1 2 3) #x10000 0)))
 
 (ert-deftest comfy-compile-return ()
-  (with-comfy-image
-   (comfy-compile image '(seq return) 0 0)
-   (comfy--expect-image (vector (comfy--get 'return 'jump)))))
+  (comfy--expect-image (vector (comfy--get 'return 'jump))
+                       (comfy-compile image '(seq return) 0 0)))
 
 (ert-deftest comfy-compile-lambda ()
-  (with-comfy-image
-   (comfy-compile image '(lambda (1) (seq i+1 i-1)) 0 0)
-   (comfy--expect-image [])))
+  (comfy--expect-image [] (comfy-compile image '(lambda () (seq i+1 i-1)) #x10000 0)))
 
 (ert-deftest comfy-undefined-name ()
   (cl-flet* ((test-expr
               (expr)
               (should (equal (cadr
-                              (with-comfy-image
-                               (should-error
-                                (comfy-compile image expr #x10000 #x10000))))
+                              (should-error
+                               (comfy-compile (make-comfy-image) expr #x10000 0)))
                              "Undefined name: undefined-name"))))
     (test-expr 'undefined-name)
     (test-expr '(undefined-name 0))
     (test-expr '(undefined-name @i 0))))
 
+(ert-deftest comfy-compile-xch ()
+  (comfy--expect-image [173 0 6 72 173 1 6 141 0 6 104 141 1 6]
+                       (comfy-compile image '(xch #x600 #x601) #x10000 0)))
 ;;;; Feature
 (provide 'comfy)
 ;;; comfy.el ends here
