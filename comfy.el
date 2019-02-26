@@ -205,7 +205,9 @@ more information."
 
 (defun comfy-actionp (e)
   "Predicate to tell whether E is an action."
-  (and (symbolp e) (not (comfy--get e 'test))))
+  ;; Anything that was not a test was considered an action, which
+  ;; resulted in undefined names being sent to comfy-emit --mkp
+  (and (symbolp e) (comfy--get e 'skeleton)))
 
 (defun comfy-jumpp (e)
   "Predicate to tell whether E is a jump-type action."
@@ -342,7 +344,9 @@ I is an unconditional instruction."
 (defun comfy-compile (image e win lose)
   "In IMAGE, compile expression E with continuations WIN and LOSE.
 WIN and LOSE are both addresses of stuff higher in memory."
-  (cond ((numberp e) ; allow constants.
+  (cond ((null e)
+         (error "Cannot compile null expression"))
+        ((numberp e) ; allow constants.
          (comfy-gen image e))
         ((comfy-macrop e)
          (comfy-compile image (apply (comfy--get e 'cmacro) (list e))
@@ -353,6 +357,8 @@ WIN and LOSE are both addresses of stuff higher in memory."
          (comfy-emit image e win))
         ((comfy-testp e) ; test instruction
          (comfy-genbrc image (comfy--get e 'test) win lose))
+        ((not (listp e))
+         (error "Undefined name: %s" e))
         ((eq (car e) 'not)
          (comfy-compile image (cadr e) lose win))
         ((eq (car e) 'seq)
@@ -386,6 +392,10 @@ WIN and LOSE are both addresses of stuff higher in memory."
         ((comfy-macrop (car e))
          (comfy-compile image (apply (comfy--get (car e) 'cmacro) (list e))
                         win lose))
+        ((not (or (numberp (car e))
+                  (comfy-actionp (car e))
+                  (comfy-testp (car e))))
+         (error "Undefined name: %s" (car e)))
         (t
          (comfy-emit image e win))))
 ;;;; Language
@@ -428,7 +438,7 @@ WIN and LOSE are both addresses of stuff higher in memory."
                     (seq . body)
                     (li s)
                     (seq . moves)
-                    (return))))))
+                    return)))))
 
 (defun comfy-genxchs (pl)
   "Generate xch items for parameter list PL.
@@ -455,7 +465,7 @@ Supports the lambda cmacro."
 Supports the call cmacro by copying parameters to the stack."
   (cond ((null pl) pl)
         (t (let* ((p (car pl)))
-             (append `((l ,p) push) (comfy-genpush (cdr pl)))))))
+             (append `((l ,p) push) (comfy--genpush (cdr pl)))))))
 
 (defun comfy-match (p e f alist)
   ;; f is a function which is executed if the comfy-match fails.
@@ -581,8 +591,6 @@ element.  PATT is used as the parameter list of a lambda."
                       (seq ,(append '(seq) body)
                            ,(append '(1+) v)
                            ,(append '(l) v)))))
-;;;; Feature
-(provide 'comfy)
 ;;;; Tests
 (defmacro with-comfy-image (&rest body)
   "Execute BODY with IMAGE defined."
@@ -631,4 +639,28 @@ element.  PATT is used as the parameter list of a lambda."
    (comfy-compile image '(call #x600 1 2 3) 0 0)
    (comfy--expect-image [165 1 72 165 2 72 165 3 72 32 0 6 186 232 232 232 154 76 0 0])))
 
+(ert-deftest comfy-compile-return ()
+  (with-comfy-image
+   (comfy-compile image '(seq return) 0 0)
+   (comfy--expect-image (vector (comfy--get 'return 'jump)))))
+
+(ert-deftest comfy-compile-lambda ()
+  (with-comfy-image
+   (comfy-compile image '(lambda (1) (seq i+1 i-1)) 0 0)
+   (comfy--expect-image [])))
+
+(ert-deftest comfy-undefined-name ()
+  (cl-flet* ((test-expr
+              (expr)
+              (should (equal (cadr
+                              (with-comfy-image
+                               (should-error
+                                (comfy-compile image expr #x10000 #x10000))))
+                             "Undefined name: undefined-name"))))
+    (test-expr 'undefined-name)
+    (test-expr '(undefined-name 0))
+    (test-expr '(undefined-name @i 0))))
+
+;;;; Feature
+(provide 'comfy)
 ;;; comfy.el ends here
