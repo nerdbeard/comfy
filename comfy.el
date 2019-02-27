@@ -425,121 +425,128 @@ expression in alist before returning it."
    ((atom p)
     (cond ((eq p e) alist)
           (t (funcall f))))
-   ((consp p)
-    (cond
-     ;; Variable
-     ((eq (car p) '\,)
-      (cons (cons (cadr p) e) alist))
-     ;; Quoted value
-     ((eq (car p) 'quote)
-      (cond ((eq (cadr p) e) alist)
-            (t (funcall f))))
-     ;; Predicate
-     ((eq (car p) 'in)
-      (cond ((funcall (cadr p) e) alist)
-            (t (funcall f))))
-     ;; Apply recursively to car and cdr of pattern and expression
-     ((consp e)
-      (comfy--match (car p) (car e) f
-                    (comfy--match (cdr p) (cdr e) f
-                                  alist)))))
-   ;; Pattern is neither atom nor cons!  Fall through to failure
+   ;; Variable
+   ((and (consp p) (eq (car p) '\,))
+    ;; Bind value and return a new alist
+    (cons (cons (cadr p) e) alist))
+   ;; Quoted value
+   ((and (consp p) (eq (car p) 'quote))
+    (cond ((eq (cadr p) e) alist)
+          (t (funcall f))))
+   ;; Predicate
+   ((and (consp p) (eq (car p) 'in))
+    (cond ((funcall (cadr p) e) alist)
+          (t (funcall f))))
+   ;; Apply recursively to car and cdr of pattern and expression
+   ((and (consp p) (consp e))
+    (comfy--match (car p) (car e) f
+                  (comfy--match (cdr p) (cdr e) f
+                                alist)))
+   ;; Fall through to failure
    (t (funcall f))))
 
-(defmacro comfy-cases (&rest a)
+(defmacro comfy--cases (&rest a)
+  "Arguments A were those passed to a cmacro.
+Dispatch to the correct implementation given the arguments passed."
   `(quote
-    ,(catch 'comfy-cases
-       (comfy-fapplyl (cdr a)
-                      (eval (car a))
-                      '(lambda () (throw 'comfy-cases nil))))))
+    ,(catch 'comfy--cases
+       (comfy--fapplyl (cdr a)
+                       (eval (car a))
+                       '(lambda () (throw 'comfy--cases nil))))))
 
-(defun comfy-fapplyl (fl a fail)
-  ;; "fail" is a function which is executed if comfy-fapplyl fails.
-  ;; "fail" had better not return.
+(defun comfy--fapplyl (fl a fail)
+  "Try each function in list FL with args A, calling FAIL if none match.
+FAIL is expected to throw an exception rather than return."
   (cond ((null fl) (funcall fail))
-        (t (catch 'comfy-fapplyl
-             (comfy-fapply (car fl) a
-                           '(lambda ()
-                              (throw 'comfy-fapplyl
-                                     (comfy-fapplyl (cdr fl) a fail))))))))
+        (t (catch 'comfy--fapplyl
+             (comfy--fapply (car fl) a
+                            '(lambda ()
+                               (throw 'comfy--fapplyl
+                                      (comfy--fapplyl (cdr fl) a fail))))))))
 
-(defun comfy-fapply (f a fail)
+(defun comfy--fapply (f a fail)
+  "If lambda F match arguments A, apply them; otherwise call FAIL.
+Call to FAIL is performed by comfy--match."
   (let* ((alist (comfy--match (cadr f) a fail nil)))
     (apply (cons 'lambda
                  (cons (mapcar 'car alist)
                        (cddr f)))
            (mapcar 'cdr alist))))
 
-(defmacro comfy-define (ind patt &rest body)
-  "Place a cmacro in the IND property of a symbol extracted from PATT;
+(defmacro define-cmacro (patt &rest body)
+  "Place a cmacro in the 'cmacro property of a symbol extracted from PATT;
 macro defined by BODY.
 
 PATT can be a symbol or a list with a symbol as its first
-element.  PATT is used as the parameter list of a lambda."
+element.
+
+Multiple cmacros can have the same name.  They are all assembled
+as clauses of a single macro and are dispatched according to pattern
+by comfy--cases."
   (let* ((where (cond ((atom patt) patt)
                       ((atom (car patt)) (car patt)))))
-    (or (comfy--get where ind)
-        (comfy--put where ind '(lambda (e) (comfy-cases e))))
+    (or (comfy--get where 'cmacro)
+        (comfy--put where 'cmacro '(lambda (e) (comfy--cases e))))
     (comfy--put
      where
-     ind
+     'cmacro
      `(lambda (e)
-        ,(append `(comfy-cases e ,(append `(lambda ,patt) body))
-                 (cddr (cadr (cdr (comfy--get where ind)))))))
+        ,(append `(comfy--cases e ,(append `(lambda ,patt) body))
+                 (cddr (cadr (cdr (comfy--get where 'cmacro)))))))
     nil))
 
-(comfy--put 'star 'cmacro nil)
+(defun undefine-cmacro (sym)
+  "Remove all cmacros for symbol SYM.
+The next definition creates a new comfy--case.  Without calling
+this between invocations of define-macro for the same signature,
+the later macros will be shadowed by the earlier ones."
+  (comfy--put sym 'cmacro nil))
 
-(comfy-define cmacro (star . ,body)
-              `(not (loop ,(append '(seq) body))))
+(undefine-cmacro 'star)
+(define-cmacro (star . ,body)
+  `(not (loop ,(append '(seq) body))))
 
-(comfy--put 'i2 'cmacro nil)
+(undefine-cmacro 'i2)
+(define-cmacro (i2 ,p)
+  `(seq (1+ ,p)
+        (if =0? (1+ (1+ ,p))
+          (seq))))
 
-(comfy-define cmacro (i2 ,p)
-              `(seq (1+ ,p)
-                    (if =0? (1+ (1+ ,p))
-                      (seq))))
+(undefine-cmacro 'move)
+(define-cmacro (move ,x ,y)
+  `(seq ,(append '(l) x)
+        ,(append '(st) y)))
 
-(comfy--put 'move 'cmacro nil)
+(undefine-cmacro 'prog)
+(define-cmacro (prog (,v) . ,body)
+  `(seq push
+        (li s)
+        (move (,v) (i #x101))
+        ,(append '(seq) body)
+        (li s)
+        (move (i #x101) (,v))
+        i-1
+        (sti s)))
 
-(comfy-define cmacro (move ,x ,y)
-              `(seq ,(append '(l) x)
-                    ,(append '(st) y)))
+(undefine-cmacro 'fori)
+(define-cmacro (fori ,from ,to . ,body)
+  `(seq ,(append '(li) from)
+        (while (seq ,(append '(ci) to) llt)
+          (seq ,(append '(seq) body) i+1))))
 
-(comfy--put 'prog 'cmacro nil)
+(undefine-cmacro 'forj)
+(define-cmacro (forj ,from ,to . ,body)
+  `(seq ,(append '(lj) from)
+        (while (seq ,(append '(cj) to) llt)
+          (seq ,(append '(seq) body) j+1))))
 
-(comfy-define cmacro (prog (,v) . ,body)
-              `(seq push
-                    (li s)
-                    (move (,v) (i #x101))
-                    ,(append '(seq) body)
-                    (li s)
-                    (move (i #x101) (,v))
-                    i-1
-                    (sti s)))
-
-(comfy--put 'fori 'cmacro nil)
-
-(comfy-define cmacro (fori ,from ,to . ,body)
-              `(seq ,(append '(li) from)
-                    (while (seq ,(append '(ci) to) llt)
-                      (seq ,(append '(seq) body) i+1))))
-
-(comfy--put 'forj 'cmacro nil)
-
-(comfy-define cmacro (forj ,from ,to . ,body)
-              `(seq ,(append '(lj) from)
-                    (while (seq ,(append '(cj) to) llt)
-                      (seq ,(append '(seq) body) j+1))))
-
-(comfy--put 'for 'cmacro nil)
-
-(comfy-define cmacro (for ,v ,from ,to . ,body)
-              `(seq ,(append '(l) from) ,(append '(st) v)
-                    (while (seq ,(append '(c) to) llt)
-                      (seq ,(append '(seq) body)
-                           ,(append '(1+) v)
-                           ,(append '(l) v)))))
+(undefine-cmacro 'for)
+(define-cmacro (for ,v ,from ,to . ,body)
+  `(seq ,(append '(l) from) ,(append '(st) v)
+        (while (seq ,(append '(c) to) llt)
+          (seq ,(append '(seq) body)
+               ,(append '(1+) v)
+               ,(append '(l) v)))))
 ;;;; Tests
 (defmacro with-comfy-image (&rest body)
   "Execute BODY with IMAGE defined.  Return the compiled code."
@@ -548,7 +555,7 @@ element.  PATT is used as the parameter list of a lambda."
      (subseq (comfy-mem image) (comfy-f image))))
 
 (defmacro comfy--expect-image (vect &rest body)
-  "Top of memory pointed to by comfy-f should equal VECT."
+  "Top of memory pointed to by comfy-f should equal VECT after executing BODY."
   `(should (equal ,vect (with-comfy-image ,@body))))
 
 (ert-deftest comfy-image ()
