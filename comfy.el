@@ -409,64 +409,6 @@ WIN and LOSE are both addresses of stuff higher in memory."
                 (mapcar '(lambda (e) (list 'not e))
                         (cdr e))))))
 
-(comfy--put
- 'call
- 'cmacro
- '(lambda (e)
-    (let* ((p (cadr e)) (pl (cddr e)))
-      (sublis (list (cons 'pushes (comfy--genpush pl))
-                    (cons 'p p)
-                    (cons 'n (length pl)))
-              '(seq (seq . pushes)
-                    (p)
-                    (li s)
-                    ;; Next line was: (land ii) --mkp
-                    (n i+1)
-                    (sti s))))))
-
-(comfy--put
- 'lambda
- 'cmacro
- '(lambda (e)
-    (let* ((pl (cadr e))
-           (body (cddr e)))
-      (sublis (list (cons 'body body)
-                    (cons 'xchs (comfy-genxchs pl))
-                    (cons 'moves (comfy-genmoves pl)))
-              '(seq (li s)
-                    (seq . xchs)
-                    (seq . body)
-                    (li s)
-                    (seq . moves)
-                    return)))))
-
-(defun comfy-genxchs (pl)
-  "Generate xch items for parameter list PL.
-Supports the lambda cmacro."
-  (cond ((null pl) pl)
-        (t (cons (list 'xch
-                       (list 'i
-                             (+ #x102 (length pl)))
-                       (list (car pl)))
-                 (comfy-genxchs (cdr pl))))))
-
-(defun comfy-genmoves (pl)
-  "Generate move items for parameter list PL.
-Supports the lambda cmacro."
-  (cond ((null pl) nil)
-        (t (cons (list 'move
-                       (list 'i
-                             (+ #x102 (length pl)))
-                       (list (car pl)))
-                 (comfy-genmoves (cdr pl))))))
-
-(defun comfy--genpush (pl)
-  "Generate load and push instructions for each address in list PL.
-Supports the call cmacro by copying parameters to the stack."
-  (cond ((null pl) pl)
-        (t (let* ((p (car pl)))
-             (append `((l ,p) push) (comfy--genpush (cdr pl)))))))
-
 (defun comfy-match (p e f alist)
   ;; f is a function which is executed if the comfy-match fails.
   ;; f had better not return.
@@ -591,16 +533,6 @@ element.  PATT is used as the parameter list of a lambda."
                       (seq ,(append '(seq) body)
                            ,(append '(1+) v)
                            ,(append '(l) v)))))
-
-(comfy--put 'xch 'cmacro nil)
-
-;; exchange 2 bytes.
-(comfy-define cmacro (xch ,x ,y)
-              `(seq (l ,x)
-                    push
-                    (l ,y) (st ,x)      ; XXX Is it okay to re-eval args?
-                    pop
-                    (st ,y)))
 ;;;; Tests
 (defmacro with-comfy-image (&rest body)
   "Execute BODY with IMAGE defined.  Return the compiled code."
@@ -638,16 +570,9 @@ element.  PATT is used as the parameter list of a lambda."
   (comfy--expect-image [2 1 2 1 2 1]
                        (comfy-compile image '(3 (seq 2 1)) 0 0)))
 
-(ert-deftest comfy-compile-call ()
-  (comfy--expect-image [165 1 72 165 2 72 165 3 72 32 0 6 186 232 232 232 154]
-                       (comfy-compile image '(call #x600 1 2 3) #x10000 0)))
-
 (ert-deftest comfy-compile-return ()
   (comfy--expect-image (vector (comfy--get 'return 'jump))
                        (comfy-compile image '(seq return) 0 0)))
-
-(ert-deftest comfy-compile-lambda ()
-  (comfy--expect-image [] (comfy-compile image '(lambda () (seq i+1 i-1)) #x10000 0)))
 
 (ert-deftest comfy-undefined-name ()
   (cl-flet* ((test-expr
