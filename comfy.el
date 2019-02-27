@@ -246,7 +246,11 @@ That is, when -128 <= N <= 127."
 
 (defun comfy-genbrc (image cond win lose)
   "In IMAGE, generate a branch on COND to WIN with failure to LOSE.
-The optimal conditional branch is generated."
+Attempts to generate the optimal conditional branch code.
+
+Zero has a special meaning for WIN and LOSE.  If exactly one is
+zero, then that outcome is never used as a branch destination,
+instead falling through."
   (let* ((w (- win (comfy-f image)))
          (l (- lose (comfy-f image)))) ;; Normalize to current point.
     (cond ((= w l) win)
@@ -286,6 +290,7 @@ Put out only one byte address, if possible."
   "Return the skeleton of the op code OP.
 The \"skeleton\" property of op contains either the code for
 \"accumulator\" (groups 0,2) or \"immediate\" (1) addressing."
+  ;; XXX Why AND 0xE3?
   (logand (comfy--get op 'skeleton) #xE3))
 
 (defun comfy-emit (image i win)
@@ -409,34 +414,37 @@ WIN and LOSE are both addresses of stuff higher in memory."
                 (mapcar '(lambda (e) (list 'not e))
                         (cdr e))))))
 
-(defun comfy-match (p e f alist)
-  ;; f is a function which is executed if the comfy-match fails.
-  ;; f had better not return.
-  (cond ((comfy-constantp p)
-         (cond ((eq p e) alist)
-               (t (funcall f))))
-        ((comfy-variablep p) (cons (cons (cadr p) e) alist))
-        ((eq (car p) 'quote) (cond ((eq (cadr p) e) alist)
-                                   (t (funcall f))))
-        ((comfy-predicate p) (cond ((funcall (cadr p) e) alist)
-                                   (t (funcall f))))
-        ((atom e) (funcall f))
-        (t (comfy-match (car p)
-                        (car e)
-                        f
-                        (comfy-match (cdr p)
-                                     (cdr e)
-                                     f
-                                     alist)))))
+(defun comfy--match (p e f alist)
+  "If pattern P and expression E don't match, call F; otherwise return ALIST.
+F is expected to throw an exception.
 
-(defun comfy-predicate (x)
-  (and (consp x) (eq (car x) 'in)))
-
-(defun comfy-constantp (x)
-  (atom x))
-
-(defun comfy-variablep (x)
-  (and (consp x) (eq (car x) '\,)))
+If the pattern is a variable, bind the variable name to the
+expression in alist before returning it."
+  (cond
+   ;; Constant
+   ((atom p)
+    (cond ((eq p e) alist)
+          (t (funcall f))))
+   ((consp p)
+    (cond
+     ;; Variable
+     ((eq (car p) '\,)
+      (cons (cons (cadr p) e) alist))
+     ;; Quoted value
+     ((eq (car p) 'quote)
+      (cond ((eq (cadr p) e) alist)
+            (t (funcall f))))
+     ;; Predicate
+     ((eq (car p) 'in)
+      (cond ((funcall (cadr p) e) alist)
+            (t (funcall f))))
+     ;; Apply recursively to car and cdr of pattern and expression
+     ((consp e)
+      (comfy--match (car p) (car e) f
+                    (comfy--match (cdr p) (cdr e) f
+                                  alist)))))
+   ;; Pattern is neither atom nor cons!  Fall through to failure
+   (t (funcall f))))
 
 (defmacro comfy-cases (&rest a)
   `(quote
@@ -456,7 +464,7 @@ WIN and LOSE are both addresses of stuff higher in memory."
                                      (comfy-fapplyl (cdr fl) a fail))))))))
 
 (defun comfy-fapply (f a fail)
-  (let* ((alist (comfy-match (cadr f) a fail nil)))
+  (let* ((alist (comfy--match (cadr f) a fail nil)))
     (apply (cons 'lambda
                  (cons (mapcar 'car alist)
                        (cddr f)))
@@ -479,7 +487,6 @@ element.  PATT is used as the parameter list of a lambda."
         ,(append `(comfy-cases e ,(append `(lambda ,patt) body))
                  (cddr (cadr (cdr (comfy--get where ind)))))))
     nil))
-
 
 (comfy--put 'star 'cmacro nil)
 
