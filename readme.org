@@ -98,7 +98,7 @@ This is COMFY-65 adapted to a modern emacs environment.
 - http://home.pipeline.com/~hbaker1/sigplannotices/sigcol04.pdf
 - http://home.pipeline.com/˜hbaker1/lisp/cfycmp.lsp: Link broken but see [[file:CFYCMP.LSP][local copy]] and an [[file:CFYCMP1.LSP][alternate version]] that seems to be from a slightly later period
 * Usage example
-#+BEGIN_SRC elisp
+#+BEGIN_SRC elisp :exports both
   (comfy-init)
   (load-file "comfy-examples.el")
   (let* ((top comfy-f)
