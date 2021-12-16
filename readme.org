@@ -1,4 +1,6 @@
 * LICENSE
+This software was obtained, modified, and re-released under the terms of the ACM Software License Agreement (below).  It contains material copyrighted by the ACM.  This MODIFIED WORK is not the original Software.
+
 #+BEGIN_EXAMPLE
 Copyright � 1998 Association for Computing Machinery, Inc. Permission
 to include in application software or to make digital or hard copies
